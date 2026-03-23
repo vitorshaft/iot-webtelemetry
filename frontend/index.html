@@ -55,13 +55,24 @@
                 const res = await fetch(API_URL);
                 globalData = await res.json();
                 
-                const labels = globalData.map(d => d.timestamp.split(' ')[1]);
-                const tensoes = globalData.map(d => d.tensao);
-                const correntes = globalData.map(d => d.corrente);
+                // Invertemos para que o gráfico flua da esquerda para a direita (antigo -> novo)
+                const dadosOrdenados = globalData.slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+                const labels = dadosOrdenados.map(d => {
+                    // Tenta converter qualquer formato de data para objeto Date
+                    const dataObj = new Date(d.timestamp);
+                    // Retorna apenas HH:MM:SS
+                    return dataObj.toLocaleTimeString('pt-BR');
+                });
+
+                const tensoes = dadosOrdenados.map(d => d.tensao);
+                const correntes = dadosOrdenados.map(d => d.corrente);
 
                 updateChart(labels, tensoes, correntes);
-                updateTable(globalData);
-            } catch (e) { console.error("Erro na API", e); }
+                updateTable(globalData); // A tabela continua mostrando o mais recente no topo
+            } catch (e) { 
+                console.error("Erro no processamento do Dashboard:", e); 
+            }
         }
 
         function updateChart(labels, v, i) {
