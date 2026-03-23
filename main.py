@@ -1,9 +1,18 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime
 from typing import List
 
 app = FastAPI(title="Soliverde IoT Gateway")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Permite qualquer origem (ideal para teste)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Modelo de dados que o ESP32 vai enviar
 class LeituraTelemetria(BaseModel):
