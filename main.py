@@ -1,48 +1,66 @@
-from fastapi import FastAPI
+import os
+from datetime import datetime
+from fastapi import FastAPI, Depends, HTTPException, Security
+from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import datetime
-from typing import List
+from sqlalchemy import create_engine, Column, Integer, Float, String, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
 
-app = FastAPI(title="Soliverde IoT Gateway")
+# Configurações de Banco de Dados
+DATABASE_URL = os.getenv("DATABASE_URL")
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], # Permite qualquer origem (ideal para teste)
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Modelo do Banco de Dados
+class LeituraDB(Base):
+    __tablename__ = "telemetria"
+    id = Column(Integer, primary_key=True, index=True)
+    id_modulo = Column(String)
+    tensao = Column(Float)
+    corrente = Column(Float)
+    potencia = Column(Float)
+    timestamp = Column(DateTime, default=datetime.now)
 
-# Modelo de dados que o ESP32 vai enviar
-class LeituraTelemetria(BaseModel):
+# Cria a tabela se não existir
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI()
+
+# Segurança (API Key)
+API_KEY = os.getenv("X_API_KEY", "chave_padrao_apenas_para_local")
+api_key_header = APIKeyHeader(name="X-API-KEY")
+
+async def get_api_key(api_key: str = Security(api_key_header)):
+    if api_key == API_KEY: return api_key
+    raise HTTPException(status_code=403, detail="Chave Inválida")
+
+# CORS
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# Dependência do Banco
+def get_db():
+    db = SessionLocal()
+    try: yield db
+    finally: db.close()
+
+# Schemas Pydantic
+class TelemetriaSchema(BaseModel):
     id_modulo: str
     tensao: float
     corrente: float
     potencia: float
 
-# Banco de dados temporário (em memória) para teste
-historico_leituras = []
-
-@app.get("/")
-def home():
-    return {"status": "Online", "projeto": "Monitoramento Perovskita", "timestamp": datetime.now()}
-
 @app.post("/telemetria")
-async def receber_dados(leitura: LeituraTelemetria):
-    # Aqui adicionamos um timestamp do servidor
-    dados_com_hora = leitura.dict()
-    dados_com_hora["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    historico_leituras.append(dados_com_hora)
-    
-    # Mantém apenas as últimas 50 leituras em memória para não estourar o tier gratuito
-    if len(historico_leituras) > 50:
-        historico_leituras.pop(0)
-        
-    print(f"Recebido de {leitura.id_modulo}: {leitura.tensao}V")
-    return {"message": "Dados recebidos com sucesso", "count": len(historico_leituras)}
+def salvar_dados(dados: TelemetriaSchema, db: Session = Depends(get_db), api_key: str = Depends(get_api_key)):
+    nova_leitura = LeituraDB(**dados.dict())
+    db.add(nova_leitura)
+    db.commit()
+    return {"status": "salvo no postgres"}
 
 @app.get("/dados")
-def listar_dados():
-    return historico_leituras
+def listar_dados(db: Session = Depends(get_db)):
+    # Retorna as últimas 100 leituras
+    return db.query(LeituraDB).order_by(LeituraDB.timestamp.desc()).limit(100).all()
