@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Soliverde - Telemetria Completa</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #f4f4f4; padding: 20px; }
+        .container { max-width: 1100px; margin: auto; background: white; padding: 20px; border-radius: 8px; shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .chart-container { height: 400px; margin-bottom: 30px; }
+        .controls { margin-bottom: 20px; text-align: right; }
+        .table-wrapper { max-height: 300px; overflow-y: auto; border: 1px solid #ddd; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; border: 1px solid #ddd; text-align: center; }
+        th { background: #eee; position: sticky; top: 0; }
+        button { padding: 10px 20px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #2ecc71; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Monitoramento: Tensão e Corrente</h1>
+        
+        <div class="chart-container">
+            <canvas id="mainChart"></canvas>
+        </div>
+
+        <div class="controls">
+            <button onclick="downloadCSV()">Download CSV</button>
+        </div>
+
+        <div class="table-wrapper">
+            <table id="data-table">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Módulo</th>
+                        <th>Tensão (V)</th>
+                        <th>Corrente (mA)</th>
+                        <th>Potência (W)</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "https://iot-webtelemetry.onrender.com/dados";
+        let chart;
+        let globalData = [];
+
+        async function updateDashboard() {
+            try {
+                const res = await fetch(API_URL);
+                globalData = await res.json();
+                
+                const labels = globalData.map(d => d.timestamp.split(' ')[1]);
+                const tensoes = globalData.map(d => d.tensao);
+                const correntes = globalData.map(d => d.corrente);
+
+                updateChart(labels, tensoes, correntes);
+                updateTable(globalData);
+            } catch (e) { console.error("Erro na API", e); }
+        }
+
+        function updateChart(labels, v, i) {
+            const ctx = document.getElementById('mainChart').getContext('2d');
+            if (chart) {
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = v;
+                chart.data.datasets[1].data = i;
+                chart.update();
+            } else {
+                chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            { label: 'Tensão (V)', data: v, borderColor: '#3498db', yAxisID: 'y' },
+                            { label: 'Corrente (mA)', data: i, borderColor: '#e67e22', yAxisID: 'y1' }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Tensão (V)' } },
+                            y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Corrente (mA)' } }
+                        }
+                    }
+                });
+            }
+        }
+
+        function updateTable(data) {
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = data.slice().reverse().map(d => `
+                <tr>
+                    <td>${d.timestamp}</td>
+                    <td>${d.id_modulo}</td>
+                    <td>${d.tensao}</td>
+                    <td>${d.corrente}</td>
+                    <td>${d.potencia.toFixed(3)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function downloadCSV() {
+            let csv = "Timestamp,Modulo,Tensao(V),Corrente(mA),Potencia(W)\n";
+            globalData.forEach(d => {
+                csv += `${d.timestamp},${d.id_modulo},${d.tensao},${d.corrente},${d.potencia}\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('hidden', '');
+            a.setAttribute('href', url);
+            a.setAttribute('download', 'telemetria_soliverde.csv');
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        updateDashboard();
+        setInterval(updateDashboard, 10000);
+    </script>
+</body>
+</html>
