@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker, Session
 DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -24,7 +25,7 @@ class LeituraDB(Base):
     tensao = Column(Float)
     corrente = Column(Float)
     potencia = Column(Float)
-    timestamp = Column(DateTime, default=datetime.now)
+    timestamp = Column(DateTime, default=datetime.utcnow) # Usando UTC para consistência
 
 # Cria a tabela se não existir
 Base.metadata.create_all(bind=engine)
@@ -39,7 +40,7 @@ async def get_api_key(api_key: str = Security(api_key_header)):
     if api_key == API_KEY: return api_key
     raise HTTPException(status_code=403, detail="Chave Inválida")
 
-# CORS
+# CORS (Permite que o seu frontend no Render acesse a API)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # Dependência do Banco
@@ -64,5 +65,5 @@ def salvar_dados(dados: TelemetriaSchema, db: Session = Depends(get_db), api_key
 
 @app.get("/dados")
 def listar_dados(db: Session = Depends(get_db)):
-    # Retorna as últimas 100 leituras
+    # Retorna as últimas 100 leituras, começando pela mais RECENTE
     return db.query(LeituraDB).order_by(LeituraDB.timestamp.desc()).limit(100).all()

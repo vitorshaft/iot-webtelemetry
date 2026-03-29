@@ -6,34 +6,40 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: sans-serif; background: #f4f4f4; padding: 20px; }
-        .container { max-width: 1100px; margin: auto; background: white; padding: 20px; border-radius: 8px; shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .container { max-width: 1100px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         .chart-container { height: 400px; margin-bottom: 30px; }
         .controls { margin-bottom: 20px; text-align: right; }
-        .table-wrapper { max-height: 300px; overflow-y: auto; border: 1px solid #ddd; }
+        .table-wrapper { max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; }
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 10px; border: 1px solid #ddd; text-align: center; }
-        th { background: #eee; position: sticky; top: 0; }
-        button { padding: 10px 20px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        th, td { padding: 12px; border: 1px solid #ddd; text-align: center; }
+        th { background: #f8f9fa; position: sticky; top: 0; z-index: 10; }
+        tr:nth-child(even) { background-color: #fcfcfc; }
+        tr:hover { background-color: #f1f1f1; }
+        button { padding: 10px 20px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
         button:hover { background: #2ecc71; }
+        .status-tag { display: inline-block; padding: 4px 8px; border-radius: 4px; background: #e8f5e9; color: #2e7d32; font-size: 0.8em; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Monitoramento: Tensão e Corrente</h1>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h1>Monitoramento Soliverde</h1>
+            <span class="status-tag">● Live: Perovskita</span>
+        </div>
         
         <div class="chart-container">
             <canvas id="mainChart"></canvas>
         </div>
 
         <div class="controls">
-            <button onclick="downloadCSV()">Download CSV</button>
+            <button onclick="downloadCSV()">Exportar Histórico (CSV)</button>
         </div>
 
         <div class="table-wrapper">
             <table id="data-table">
                 <thead>
                     <tr>
-                        <th>Timestamp</th>
+                        <th>Horário</th>
                         <th>Módulo</th>
                         <th>Tensão (V)</th>
                         <th>Corrente (mA)</th>
@@ -53,25 +59,29 @@
         async function updateDashboard() {
             try {
                 const res = await fetch(API_URL);
+                // globalData vem do backend como [MAIS_RECENTE, ..., MAIS_ANTIGO]
                 globalData = await res.json();
                 
-                // Invertemos para que o gráfico flua da esquerda para a direita (antigo -> novo)
-                const dadosOrdenados = globalData.slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                // 1. Ordem para o Gráfico: Criamos uma cópia e ordenamos cronologicamente (Antigo -> Novo)
+                // Isso garante que o tempo "corra" para a direita no gráfico.
+                const dadosParaGrafico = [...globalData].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-                const labels = dadosOrdenados.map(d => {
-                    // Tenta converter qualquer formato de data para objeto Date
+                const labels = dadosParaGrafico.map(d => {
                     const dataObj = new Date(d.timestamp);
-                    // Retorna apenas HH:MM:SS
                     return dataObj.toLocaleTimeString('pt-BR');
                 });
 
-                const tensoes = dadosOrdenados.map(d => d.tensao);
-                const correntes = dadosOrdenados.map(d => d.corrente);
+                const tensoes = dadosParaGrafico.map(d => d.tensao);
+                const correntes = dadosParaGrafico.map(d => d.corrente);
 
                 updateChart(labels, tensoes, correntes);
-                updateTable(globalData); // A tabela continua mostrando o mais recente no topo
+
+                // 2. Ordem para a Tabela: Usamos globalData direto (Mais recente no topo)
+                // Removido o .reverse() pois o backend já entrega na ordem desejada.
+                updateTable(globalData); 
+
             } catch (e) { 
-                console.error("Erro no processamento do Dashboard:", e); 
+                console.error("Erro ao atualizar dashboard:", e); 
             }
         }
 
@@ -81,15 +91,15 @@
                 chart.data.labels = labels;
                 chart.data.datasets[0].data = v;
                 chart.data.datasets[1].data = i;
-                chart.update();
+                chart.update('none'); // Atualização suave sem animações bruscas
             } else {
                 chart = new Chart(ctx, {
                     type: 'line',
                     data: {
                         labels: labels,
                         datasets: [
-                            { label: 'Tensão (V)', data: v, borderColor: '#3498db', yAxisID: 'y' },
-                            { label: 'Corrente (mA)', data: i, borderColor: '#e67e22', yAxisID: 'y1' }
+                            { label: 'Tensão (V)', data: v, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', fill: true, yAxisID: 'y', tension: 0.3 },
+                            { label: 'Corrente (mA)', data: i, borderColor: '#e67e22', backgroundColor: 'rgba(230, 126, 34, 0.1)', fill: true, yAxisID: 'y1', tension: 0.3 }
                         ]
                     },
                     options: {
@@ -106,33 +116,40 @@
 
         function updateTable(data) {
             const tbody = document.getElementById('table-body');
-            tbody.innerHTML = data.slice().reverse().map(d => `
-                <tr>
-                    <td>${d.timestamp}</td>
-                    <td>${d.id_modulo}</td>
-                    <td>${d.tensao}</td>
-                    <td>${d.corrente}</td>
-                    <td>${d.potencia.toFixed(3)}</td>
-                </tr>
-            `).join('');
+            // Formata a data para ficar mais legível na tabela (DD/MM HH:MM:SS)
+            tbody.innerHTML = data.map(d => {
+                const dataFormatada = new Date(d.timestamp).toLocaleString('pt-BR');
+                return `
+                    <tr>
+                        <td>${dataFormatada}</td>
+                        <td><strong>${d.id_modulo}</strong></td>
+                        <td>${d.tensao.toFixed(2)}V</td>
+                        <td>${d.corrente.toFixed(1)}mA</td>
+                        <td>${d.potencia.toFixed(3)}W</td>
+                    </tr>
+                `;
+            }).join('');
         }
 
         function downloadCSV() {
-            let csv = "Timestamp,Modulo,Tensao(V),Corrente(mA),Potencia(W)\n";
+            let csv = "\uFEFF"; // Byte Order Mark para Excel reconhecer acentos
+            csv += "Data e Hora,Modulo,Tensao(V),Corrente(mA),Potencia(W)\n";
             globalData.forEach(d => {
-                csv += `${d.timestamp},${d.id_modulo},${d.tensao},${d.corrente},${d.potencia}\n`;
+                const dataStr = new Date(d.timestamp).toLocaleString('pt-BR');
+                csv += `${dataStr},${d.id_modulo},${d.tensao},${d.corrente},${d.potencia}\n`;
             });
-            const blob = new Blob([csv], { type: 'text/csv' });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.setAttribute('hidden', '');
-            a.setAttribute('href', url);
-            a.setAttribute('download', 'telemetria_soliverde.csv');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `telemetria_soliverde_${new Date().toISOString().split('T')[0]}.csv`;
             document.body.appendChild(a);
             a.click();
-            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
         }
 
+        // Inicializa e define o loop de atualização
         updateDashboard();
         setInterval(updateDashboard, 10000);
     </script>
