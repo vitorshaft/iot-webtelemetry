@@ -44,6 +44,7 @@
                         <th>Tensão (V)</th>
                         <th>Corrente (mA)</th>
                         <th>Potência (W)</th>
+                        <th>Temp (°C)</th> </tr>
                     </tr>
                 </thead>
                 <tbody id="table-body"></tbody>
@@ -73,8 +74,9 @@
 
                 const tensoes = dadosParaGrafico.map(d => d.tensao);
                 const correntes = dadosParaGrafico.map(d => d.corrente);
-
-                updateChart(labels, tensoes, correntes);
+                const temperaturas = dadosParaGrafico.map(d => d.temperatura);
+                
+                updateChart(labels, tensoes, correntes, temperaturas);
 
                 // 2. Ordem para a Tabela: Usamos globalData direto (Mais recente no topo)
                 // Removido o .reverse() pois o backend já entrega na ordem desejada.
@@ -98,8 +100,15 @@
                     data: {
                         labels: labels,
                         datasets: [
-                            { label: 'Tensão (V)', data: v, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', fill: true, yAxisID: 'y', tension: 0.3 },
-                            { label: 'Corrente (mA)', data: i, borderColor: '#e67e22', backgroundColor: 'rgba(230, 126, 34, 0.1)', fill: true, yAxisID: 'y1', tension: 0.3 }
+                            { label: 'Tensão (V)', data: v, borderColor: '#3498db', yAxisID: 'y' },
+                            { label: 'Corrente (mA)', data: i, borderColor: '#e67e22', yAxisID: 'y1' },
+                            { 
+                                label: 'Temp (°C)', 
+                                data: t, // O novo parâmetro 't'
+                                borderColor: '#e74c3c', 
+                                borderDash: [5, 5], // Linha tracejada para diferenciar
+                                yAxisID: 'y' 
+                            }
                         ]
                     },
                     options: {
@@ -126,6 +135,7 @@
                         <td>${d.tensao.toFixed(2)}V</td>
                         <td>${d.corrente.toFixed(1)}mA</td>
                         <td>${d.potencia.toFixed(3)}W</td>
+                        <td>${d.temperatura ? d.temperatura.toFixed(1) + '°C' : '---'}</td>
                     </tr>
                 `;
             }).join('');
@@ -133,10 +143,10 @@
 
         function downloadCSV() {
             let csv = "\uFEFF"; // Byte Order Mark para Excel reconhecer acentos
-            csv += "Data e Hora,Modulo,Tensao(V),Corrente(mA),Potencia(W)\n";
+            csv += "Data e Hora,Modulo,Tensao(V),Corrente(mA),Potencia(W),Temperatura(C)\n";
             globalData.forEach(d => {
                 const dataStr = new Date(d.timestamp).toLocaleString('pt-BR');
-                csv += `${dataStr},${d.id_modulo},${d.tensao},${d.corrente},${d.potencia}\n`;
+                csv += `${dataStr},${d.id_modulo},${d.tensao},${d.corrente},${d.potencia},${d.temperatura || 0}\n`;
             });
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const url = window.URL.createObjectURL(blob);
