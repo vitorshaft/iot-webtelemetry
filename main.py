@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +26,7 @@ class LeituraDB(Base):
     tensao = Column(Float)
     corrente = Column(Float)
     potencia = Column(Float)
+    temperatura = Column(Float, nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow) # Usando UTC para consistência
 
 # Cria a tabela se não existir
@@ -55,6 +57,7 @@ class TelemetriaSchema(BaseModel):
     tensao: float
     corrente: float
     potencia: float
+    temperatura: Optional[float] = None
 
 @app.post("/telemetria")
 def salvar_dados(dados: TelemetriaSchema, db: Session = Depends(get_db), api_key: str = Depends(get_api_key)):
