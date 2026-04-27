@@ -31,8 +31,18 @@
             <canvas id="mainChart"></canvas>
         </div>
 
-        <div class="controls">
-            <button onclick="downloadCSV()">Exportar Histórico (CSV)</button>
+        <div class="controls" style="text-align: left; background: #eee; padding: 15px; border-radius: 4px; display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
+            <div>
+                <label style="display:block; font-size: 12px;">Início:</label>
+                <input type="datetime-local" id="filtro-inicio">
+            </div>
+            <div>
+                <label style="display:block; font-size: 12px;">Fim:</label>
+                <input type="datetime-local" id="filtro-fim">
+            </div>
+            <button onclick="updateDashboard()" style="background: #3498db;">Filtrar Dados</button>
+            <button onclick="limparFiltro()" style="background: #95a5a6;">Limpar</button>
+            <button onclick="downloadCSV()" style="margin-left: auto;">Exportar CSV</button>
         </div>
 
         <div class="table-wrapper">
@@ -58,30 +68,43 @@
         let globalData = [];
 
         async function updateDashboard() {
+            const inicio = document.getElementById('filtro-inicio').value;
+            const fim = document.getElementById('filtro-fim').value;
+
+            let url = API_URL;
+            if (inicio || fim) {
+                // Constrói a URL com os parâmetros de busca
+                const params = new URLSearchParams();
+                if (inicio) params.append('inicio', inicio);
+                if (fim) params.append('fim', fim);
+                url += `?${params.toString()}`;
+            }
+
             try {
-                const res = await fetch(API_URL);
+                const res = await fetch(url);
                 globalData = await res.json();
                 
+                // Mantemos a lógica de ordenação para o gráfico fluir para a direita
                 const dadosParaGrafico = [...globalData].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-                const labels = dadosParaGrafico.map(d => {
-                    const dataObj = new Date(d.timestamp);
-                    return dataObj.toLocaleTimeString('pt-BR');
-                });
-
+                const labels = dadosParaGrafico.map(d => new Date(d.timestamp).toLocaleTimeString('pt-BR'));
                 const tensoes = dadosParaGrafico.map(d => d.tensao);
                 const correntes = dadosParaGrafico.map(d => d.corrente);
                 const temperaturas = dadosParaGrafico.map(d => d.temperatura);
                 
-                // CORREÇÃO: Passando o quarto parâmetro
                 updateChart(labels, tensoes, correntes, temperaturas);
                 updateTable(globalData); 
 
             } catch (e) { 
-                console.error("Erro ao atualizar dashboard:", e); 
+                console.error("Erro ao filtrar dados:", e); 
             }
         }
 
+        function limparFiltro() {
+            document.getElementById('filtro-inicio').value = '';
+            document.getElementById('filtro-fim').value = '';
+            updateDashboard();
+        }
         // CORREÇÃO: Adicionado 't' na assinatura da função
         function updateChart(labels, v, i, t) {
             const ctx = document.getElementById('mainChart').getContext('2d');

@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 from typing import Optional
-from fastapi import FastAPI, Depends, HTTPException, Security
+from fastapi import FastAPI, Depends, HTTPException, Security, Query
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -67,6 +67,25 @@ def salvar_dados(dados: TelemetriaSchema, db: Session = Depends(get_db), api_key
     return {"status": "salvo no postgres"}
 
 @app.get("/dados")
-def listar_dados(db: Session = Depends(get_db)):
-    # Retorna as últimas 100 leituras, começando pela mais RECENTE
-    return db.query(LeituraDB).order_by(LeituraDB.timestamp.desc()).limit(100).all()
+def listar_dados(
+    db: Session = Depends(get_db),
+    inicio: Optional[str] = None,
+    fim: Optional[str] = None
+):
+    query = db.query(LeituraDB)
+
+    if inicio:
+        # Converte a string do input (ISO format) para objeto datetime
+        dt_inicio = datetime.fromisoformat(inicio)
+        query = query.filter(LeituraDB.timestamp >= dt_inicio)
+    
+    if fim:
+        dt_fim = datetime.fromisoformat(fim)
+        query = query.filter(LeituraDB.timestamp <= dt_fim)
+
+    # Se não houver filtro, mantemos o limite de 100 para não travar o dashboard
+    # Se houver filtro, retornamos todos os dados daquele intervalo
+    if not inicio and not fim:
+        return query.order_by(LeituraDB.timestamp.desc()).limit(100).all()
+    
+    return query.order_by(LeituraDB.timestamp.desc()).all()
