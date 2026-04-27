@@ -44,7 +44,7 @@
                         <th>Tensão (V)</th>
                         <th>Corrente (mA)</th>
                         <th>Potência (W)</th>
-                        <th>Temp (°C)</th> </tr>
+                        <th>Temp (°C)</th>
                     </tr>
                 </thead>
                 <tbody id="table-body"></tbody>
@@ -60,11 +60,8 @@
         async function updateDashboard() {
             try {
                 const res = await fetch(API_URL);
-                // globalData vem do backend como [MAIS_RECENTE, ..., MAIS_ANTIGO]
                 globalData = await res.json();
                 
-                // 1. Ordem para o Gráfico: Criamos uma cópia e ordenamos cronologicamente (Antigo -> Novo)
-                // Isso garante que o tempo "corra" para a direita no gráfico.
                 const dadosParaGrafico = [...globalData].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
                 const labels = dadosParaGrafico.map(d => {
@@ -76,10 +73,8 @@
                 const correntes = dadosParaGrafico.map(d => d.corrente);
                 const temperaturas = dadosParaGrafico.map(d => d.temperatura);
                 
+                // CORREÇÃO: Passando o quarto parâmetro
                 updateChart(labels, tensoes, correntes, temperaturas);
-
-                // 2. Ordem para a Tabela: Usamos globalData direto (Mais recente no topo)
-                // Removido o .reverse() pois o backend já entrega na ordem desejada.
                 updateTable(globalData); 
 
             } catch (e) { 
@@ -87,27 +82,30 @@
             }
         }
 
-        function updateChart(labels, v, i) {
+        // CORREÇÃO: Adicionado 't' na assinatura da função
+        function updateChart(labels, v, i, t) {
             const ctx = document.getElementById('mainChart').getContext('2d');
             if (chart) {
                 chart.data.labels = labels;
                 chart.data.datasets[0].data = v;
                 chart.data.datasets[1].data = i;
-                chart.update('none'); // Atualização suave sem animações bruscas
+                chart.data.datasets[2].data = t; // CORREÇÃO: Atualizando dados de temperatura
+                chart.update('none');
             } else {
                 chart = new Chart(ctx, {
                     type: 'line',
                     data: {
                         labels: labels,
                         datasets: [
-                            { label: 'Tensão (V)', data: v, borderColor: '#3498db', yAxisID: 'y' },
-                            { label: 'Corrente (mA)', data: i, borderColor: '#e67e22', yAxisID: 'y1' },
+                            { label: 'Tensão (V)', data: v, borderColor: '#3498db', yAxisID: 'y', tension: 0.3 },
+                            { label: 'Corrente (mA)', data: i, borderColor: '#e67e22', yAxisID: 'y1', tension: 0.3 },
                             { 
                                 label: 'Temp (°C)', 
-                                data: t, // O novo parâmetro 't'
+                                data: t, // Agora 't' existe!
                                 borderColor: '#e74c3c', 
-                                borderDash: [5, 5], // Linha tracejada para diferenciar
-                                yAxisID: 'y' 
+                                borderDash: [5, 5],
+                                yAxisID: 'y',
+                                tension: 0.3
                             }
                         ]
                     },
@@ -115,7 +113,7 @@
                         responsive: true,
                         maintainAspectRatio: false,
                         scales: {
-                            y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Tensão (V)' } },
+                            y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Tensão / Temp' } },
                             y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Corrente (mA)' } }
                         }
                     }
@@ -125,7 +123,6 @@
 
         function updateTable(data) {
             const tbody = document.getElementById('table-body');
-            // Formata a data para ficar mais legível na tabela (DD/MM HH:MM:SS)
             tbody.innerHTML = data.map(d => {
                 const dataFormatada = new Date(d.timestamp).toLocaleString('pt-BR');
                 return `
@@ -135,14 +132,14 @@
                         <td>${d.tensao.toFixed(2)}V</td>
                         <td>${d.corrente.toFixed(1)}mA</td>
                         <td>${d.potencia.toFixed(3)}W</td>
-                        <td>${d.temperatura ? d.temperatura.toFixed(1) + '°C' : '---'}</td>
+                        <td>${d.temperatura != null ? d.temperatura.toFixed(1) + '°C' : '---'}</td>
                     </tr>
                 `;
             }).join('');
         }
 
         function downloadCSV() {
-            let csv = "\uFEFF"; // Byte Order Mark para Excel reconhecer acentos
+            let csv = "\uFEFF"; 
             csv += "Data e Hora,Modulo,Tensao(V),Corrente(mA),Potencia(W),Temperatura(C)\n";
             globalData.forEach(d => {
                 const dataStr = new Date(d.timestamp).toLocaleString('pt-BR');
@@ -159,7 +156,6 @@
             window.URL.revokeObjectURL(url);
         }
 
-        // Inicializa e define o loop de atualização
         updateDashboard();
         setInterval(updateDashboard, 10000);
     </script>
