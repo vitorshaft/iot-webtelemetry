@@ -8,7 +8,7 @@
         body { font-family: sans-serif; background: #f4f4f4; padding: 20px; }
         .container { max-width: 1100px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         .chart-container { height: 400px; margin-bottom: 30px; }
-        .controls { margin-bottom: 20px; text-align: right; }
+        .controls { margin-bottom: 20px; text-align: left; background: #eee; padding: 15px; border-radius: 4px; display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; }
         .table-wrapper { max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 12px; border: 1px solid #ddd; text-align: center; }
@@ -18,6 +18,7 @@
         button { padding: 10px 20px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
         button:hover { background: #2ecc71; }
         .status-tag { display: inline-block; padding: 4px 8px; border-radius: 4px; background: #e8f5e9; color: #2e7d32; font-size: 0.8em; font-weight: bold; }
+        select { padding: 6px; border-radius: 4px; border: 1px solid #ccc; background: white; }
     </style>
 </head>
 <body>
@@ -31,17 +32,35 @@
             <canvas id="mainChart"></canvas>
         </div>
 
-        <div class="controls" style="text-align: left; background: #eee; padding: 15px; border-radius: 4px; display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
+        <div class="controls">
             <div>
-                <label style="display:block; font-size: 12px;">Início:</label>
+                <label style="display:block; font-size: 12px; font-weight: bold;">Início:</label>
                 <input type="datetime-local" id="filtro-inicio">
             </div>
             <div>
-                <label style="display:block; font-size: 12px;">Fim:</label>
+                <label style="display:block; font-size: 12px; font-weight: bold;">Fim:</label>
                 <input type="datetime-local" id="filtro-fim">
             </div>
-            <button onclick="updateDashboard()" style="background: #3498db;">Filtrar Dados</button>
-            <button onclick="limparFiltro()" style="background: #95a5a6;">Limpar</button>
+            <div>
+                <label style="display:block; font-size: 12px; font-weight: bold;">Escala Tensão:</label>
+                <select id="escala-tensao" onchange="updateDashboard()">
+                    <option value="V">Volt (V)</option>
+                    <option value="mV">Milivolt (mV)</option>
+                    <option value="uV">Microvolt (µV)</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block; font-size: 12px; font-weight: bold;">Escala Corrente:</label>
+                <select id="escala-corrente" onchange="updateDashboard()">
+                    <option value="mA" selected>Miliampere (mA)</option>
+                    <option value="A">Ampere (A)</option>
+                    <option value="uA">Microampere (µA)</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="updateDashboard()" style="background: #3498db;">Filtrar Dados</button>
+                <button onclick="limparFiltro()" style="background: #95a5a6;">Limpar</button>
+            </div>
             <button onclick="downloadCSV()" style="margin-left: auto;">Exportar CSV</button>
         </div>
 
@@ -51,8 +70,8 @@
                     <tr>
                         <th>Horário</th>
                         <th>Módulo</th>
-                        <th>Tensão (V)</th>
-                        <th>Corrente (mA)</th>
+                        <th id="th-tensao">Tensão (V)</th>
+                        <th id="th-corrente">Corrente (mA)</th>
                         <th>Potência (W)</th>
                         <th>Temp (°C)</th>
                     </tr>
@@ -67,13 +86,33 @@
         let chart;
         let globalData = [];
 
+        // Funções de Conversão de Escala
+        function converterTensao(valorV, escala) {
+            if (escala === 'mV') return valorV * 1000;
+            if (escala === 'uV') return valorV * 1000000;
+            return valorV; // Padrão Volt
+        }
+
+        function converterCorrente(valorMA, escala) {
+            // O banco armazena em mA vindo do firmware (.getCurrent_mA)
+            const valorA = valorMA / 1000.0;
+            if (escala === 'A') return valorA;
+            if (escala === 'uA') return valorMA * 1000;
+            return valorMA; // Padrão miliAmpere
+        }
+
         async function updateDashboard() {
             const inicio = document.getElementById('filtro-inicio').value;
             const fim = document.getElementById('filtro-fim').value;
+            const escTensao = document.getElementById('escala-tensao').value;
+            const escCorrente = document.getElementById('escala-corrente').value;
+
+            // Atualiza os cabeçalhos da tabela dinamicamente
+            document.getElementById('th-tensao').innerText = `Tensão (${escTensao})`;
+            document.getElementById('th-corrente').innerText = `Corrente (${escCorrente})`;
 
             let url = API_URL;
             if (inicio || fim) {
-                // Constrói a URL com os parâmetros de busca
                 const params = new URLSearchParams();
                 if (inicio) params.append('inicio', inicio);
                 if (fim) params.append('fim', fim);
@@ -84,19 +123,23 @@
                 const res = await fetch(url);
                 globalData = await res.json();
                 
-                // Mantemos a lógica de ordenação para o gráfico fluir para a direita
                 const dadosParaGrafico = [...globalData].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-                const labels = dadosParaGrafico.map(d => new Date(d.timestamp).toLocaleTimeString('pt-BR'));
-                const tensoes = dadosParaGrafico.map(d => d.tensao);
-                const correntes = dadosParaGrafico.map(d => d.corrente);
+                // Timezone local automática aplicada na conversão da string ISO do banco
+                const labels = dadosParaGrafico.map(d => {
+                    const dt = new Date(d.timestamp);
+                    return dt.toLocaleTimeString('pt-BR');
+                });
+
+                const tensoes = dadosParaGrafico.map(d => converterTensao(d.tensao, escTensao));
+                const correntes = dadosParaGrafico.map(d => converterCorrente(d.corrente, escCorrente));
                 const temperaturas = dadosParaGrafico.map(d => d.temperatura);
                 
-                updateChart(labels, tensoes, correntes, temperaturas);
-                updateTable(globalData); 
+                updateChart(labels, tensoes, correntes, temperaturas, escTensao, escCorrente);
+                updateTable(globalData, escTensao, escCorrente); 
 
             } catch (e) { 
-                console.error("Erro ao filtrar dados:", e); 
+                console.error("Erro ao atualizar dashboard:", e); 
             }
         }
 
@@ -105,14 +148,18 @@
             document.getElementById('filtro-fim').value = '';
             updateDashboard();
         }
-        // CORREÇÃO: Adicionado 't' na assinatura da função
-        function updateChart(labels, v, i, t) {
+
+        function updateChart(labels, v, i, t, escTensao, escCorrente) {
             const ctx = document.getElementById('mainChart').getContext('2d');
             if (chart) {
                 chart.data.labels = labels;
+                chart.data.datasets[0].label = `Tensão (${escTensao})`;
                 chart.data.datasets[0].data = v;
+                chart.data.datasets[1].label = `Corrente (${escCorrente})`;
                 chart.data.datasets[1].data = i;
-                chart.data.datasets[2].data = t; // CORREÇÃO: Atualizando dados de temperatura
+                chart.data.datasets[2].data = t;
+                chart.options.scales.y1.title.text = `Corrente (${escCorrente})`;
+                chart.options.scales.y.title.text = `Tensão (${escTensao}) / Temp`;
                 chart.update('none');
             } else {
                 chart = new Chart(ctx, {
@@ -120,40 +167,40 @@
                     data: {
                         labels: labels,
                         datasets: [
-                            { label: 'Tensão (V)', data: v, borderColor: '#3498db', yAxisID: 'y', tension: 0.3 },
-                            { label: 'Corrente (mA)', data: i, borderColor: '#e67e22', yAxisID: 'y1', tension: 0.3 },
-                            { 
-                                label: 'Temp (°C)', 
-                                data: t, // Agora 't' existe!
-                                borderColor: '#e74c3c', 
-                                borderDash: [5, 5],
-                                yAxisID: 'y',
-                                tension: 0.3
-                            }
+                            { label: `Tensão (${escTensao})`, data: v, borderColor: '#3498db', yAxisID: 'y', tension: 0.3 },
+                            { label: `Corrente (${escCorrente})`, data: i, borderColor: '#e67e22', yAxisID: 'y1', tension: 0.3 },
+                            { label: 'Temp (°C)', data: t, borderColor: '#e74c3c', borderDash: [5, 5], yAxisID: 'y', tension: 0.3 }
                         ]
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
                         scales: {
-                            y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Tensão / Temp' } },
-                            y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Corrente (mA)' } }
+                            y: { type: 'linear', display: true, position: 'left', title: { display: true, text: `Tensão (${escTensao}) / Temp` } },
+                            y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: `Corrente (${escCorrente})` } }
                         }
                     }
                 });
             }
         }
 
-        function updateTable(data) {
+        function updateTable(data, escTensao, escCorrente) {
             const tbody = document.getElementById('table-body');
             tbody.innerHTML = data.map(d => {
+                // Timezone local automática no formato legível da região
                 const dataFormatada = new Date(d.timestamp).toLocaleString('pt-BR');
+                const vConv = converterTensao(d.tensao, escTensao);
+                const iConv = converterCorrente(d.corrente, escCorrente);
+
+                let decV = escTensao === 'V' ? 2 : (escTensao === 'mV' ? 1 : 0);
+                let decI = escCorrente === 'mA' ? 1 : (escCorrente === 'A' ? 3 : 1);
+
                 return `
                     <tr>
                         <td>${dataFormatada}</td>
                         <td><strong>${d.id_modulo}</strong></td>
-                        <td>${d.tensao.toFixed(2)}V</td>
-                        <td>${d.corrente.toFixed(1)}mA</td>
+                        <td>${vConv.toFixed(decV)}${escTensao}</td>
+                        <td>${iConv.toFixed(decI)}${escCorrente}</td>
                         <td>${d.potencia.toFixed(3)}W</td>
                         <td>${d.temperatura != null ? d.temperatura.toFixed(1) + '°C' : '---'}</td>
                     </tr>
@@ -162,12 +209,19 @@
         }
 
         function downloadCSV() {
+            const escTensao = document.getElementById('escala-tensao').value;
+            const escCorrente = document.getElementById('escala-corrente').value;
+
             let csv = "\uFEFF"; 
-            csv += "Data e Hora,Modulo,Tensao(V),Corrente(mA),Potencia(W),Temperatura(C)\n";
+            csv += `Data e Hora (Local),Modulo,Tensao(${escTensao}),Corrente(${escCorrente}),Potencia(W),Temperatura(C)\n`;
+            
             globalData.forEach(d => {
                 const dataStr = new Date(d.timestamp).toLocaleString('pt-BR');
-                csv += `${dataStr},${d.id_modulo},${d.tensao},${d.corrente},${d.potencia},${d.temperatura || 0}\n`;
+                const vConv = converterTensao(d.tensao, escTensao);
+                const iConv = converterCorrente(d.corrente, escCorrente);
+                csv += `"${dataStr}",${d.id_modulo},${vConv},${iConv},${d.potencia},${d.temperatura || 0}\n`;
             });
+
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');

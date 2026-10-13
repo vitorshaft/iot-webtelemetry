@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, Column, Integer, Float, String, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 
-# Configurações de Banco de Dados
+# Database config
 DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -18,7 +18,7 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# Modelo do Banco de Dados
+# Database model
 class LeituraDB(Base):
     __tablename__ = "telemetria"
     id = Column(Integer, primary_key=True, index=True)
@@ -29,12 +29,12 @@ class LeituraDB(Base):
     temperatura = Column(Float, nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow) # Usando UTC para consistência
 
-# Cria a tabela se não existir
+# Create table if not existent
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# Segurança (API Key)
+# Security (API Key)
 API_KEY = os.getenv("X_API_KEY", "chave_padrao_apenas_para_local")
 api_key_header = APIKeyHeader(name="X-API-KEY")
 
@@ -42,10 +42,10 @@ async def get_api_key(api_key: str = Security(api_key_header)):
     if api_key == API_KEY: return api_key
     raise HTTPException(status_code=403, detail="Chave Inválida")
 
-# CORS (Permite que o seu frontend no Render acesse a API)
+# CORS
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# Dependência do Banco
+# Database dependency
 def get_db():
     db = SessionLocal()
     try: yield db
@@ -75,7 +75,7 @@ def listar_dados(
     query = db.query(LeituraDB)
 
     if inicio:
-        # Converte a string do input (ISO format) para objeto datetime
+        # Converts input string to datetime object
         dt_inicio = datetime.fromisoformat(inicio)
         query = query.filter(LeituraDB.timestamp >= dt_inicio)
     
@@ -83,8 +83,7 @@ def listar_dados(
         dt_fim = datetime.fromisoformat(fim)
         query = query.filter(LeituraDB.timestamp <= dt_fim)
 
-    # Se não houver filtro, mantemos o limite de 100 para não travar o dashboard
-    # Se houver filtro, retornamos todos os dados daquele intervalo
+    # If no filter found, keep limit of 100 so that dashboard doesnt freeze
     if not inicio and not fim:
         return query.order_by(LeituraDB.timestamp.desc()).limit(100).all()
     
